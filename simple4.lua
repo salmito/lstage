@@ -1,22 +1,14 @@
+--channels may be used to implement call return pattern
 local l=require'lstage'
 
-local s2=l.stage() --no environment yet
+local chan=l.channel()
 
-local chan=l.channel() --asynchronous channel (a la go)
-
-local s=l.stage(function()
-    local par=chan:get()
-    for i=1,par do 
-      print('very expensive operation',i)
-      l.event.sleep(1.42)
-      print('end',i)
+local s1=l.stage(function()
+    print('very expensive operation')
+    for i=1,100000000 do 
+      z=(i^2+2*i+2^2)
     end
+    chan:push('s1 ended')
 end):push()
-
-s2:wrap(function(...) --sets the environment of s2
-    chan:push(...) --upvalue
-end)
-
-s2:push(10)
-
-l.event.sleep(10.0)
+print('waiting')
+print(chan:get())

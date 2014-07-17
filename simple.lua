@@ -1,9 +1,10 @@
-local l=require'lstage'
+--A stage runs asynchronously
+local lstage=require'lstage'
 
-local s=l.stage(function()
+local s=lstage.stage(function()
     print('hello')
 end):push()
 
-print(s)
+print(s) --s will be printed first
 
-l.event.sleep(1.0)
+lstage.event.sleep(1.0) --necessary for s to run
