@@ -1,15 +1,17 @@
+--Stage communicate through asynchronous channels
+--(no globals)
 local l=require'lstage'
 
 local s2=l.stage() --no environment yet
 
-local chan=l.channel() --asynchronous channel (a la go)
+local chan=l.channel() --Asynchronous channel
 
 local s=l.stage(function()
-    print('hello',chan:get())
+    print('hello',chan:get()) --stage sleeps if channel is empty
 end):push()
 
-s2:wrap(function(...) --sets the environment of s2
-    chan:push(...) --upvalue
+s2:wrap(function(...)
+    chan:push(...) 
 end)
 
 s2:push('world')

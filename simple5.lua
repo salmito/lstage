@@ -1,24 +1,25 @@
+--Add threads to the pool for true paralelism
 local l=require'lstage'
 
-local s2=l.stage() --no environment yet
+l.pool:add(1) --without this they will execute sequentially
 
-local chan=l.channel() --asynchronous channel (a la go)
-local ret=l.channel() --return channel
+local chan=l.channel()
 
-local s=l.stage(function(i)
-      print('very expensive operation',i)
-      l.event.sleep(1)
-      print('end',i)
-      ret:push(i)
-end)
-
-s2:wrap(function(par) --sets the environment of s2
-    for i=1,par do 
-      s:push(i) --upvalue
+local s1=l.stage(function()
+    print('very expensive operation')
+    for i=1,100000000 do 
+      z=(i^2+2*i+2^2)
     end
-end)
+    chan:push('s1 ended')
+end):push()
 
-s2:push(10)
-for i=1,10 do
-  print('ended',ret:get())
-end
+local s2=l.stage(function()
+    print('very expensive operation')
+    for i=1,100000000 do 
+      z=(i^2+2*i+2^2)
+    end
+    chan:push('s2 ended')
+end):push()
+
+print(chan:get())
+print(chan:get())
