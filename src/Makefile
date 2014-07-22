@@ -17,7 +17,7 @@ G_PLUS_PLUS=g++
 
 OBJ=  lstage.o \
 		stage.o \
-		lf_queue.o \
+		lfds_queue.o \
 		p_queue.o \
 		marshal.o \
 		event.o \
@@ -26,6 +26,7 @@ OBJ=  lstage.o \
 		scheduler.o \
 		pool.o \
 		channel.o
+		#lf_queue.o \
       
 HEADERS=*.h
 
@@ -43,6 +44,9 @@ p_queue.o: p_queue.cpp
 
 lf_queue.o: lf_queue.cpp
 	$(G_PLUS_PLUS) -c -o $@ $< $(CFLAGS)
+
+lfds_queue.o: lf_queue.cpp
+	$(G_PLUS_PLUS)  -std=c11 -c -o $@ $< $(CFLAGS)
 	
 $(MODULE): $(OBJ)
 	$(G_PLUS_PLUS) -shared $^ -o $@ $(LDFLAGS)
