@@ -12,6 +12,7 @@ local thn_clk=os.clock()
 local now=lstage.now
 
 local finish=lstage.channel()
+local test=lstage.channel()
 
 local s2=lstage.stage(function()
 	i=(i or 0) +1
@@ -20,15 +21,39 @@ local s2=lstage.stage(function()
 	end 
 end)
 
+local channel_test=lstage.stage(function()
+	for i=1,n do
+		local g=0
+		for y=1,it do
+	    	   g=(g+y)
+		end
+		i=(i or 0) +1
+		test:get()
+		--print(i)
+		if i==n then
+			finish:push('end')
+			return
+		end 
+	end
+end):push()
+
+
 local function f(data)
   local n=0
   for i=1,it do
     n=(n+i)
   end
   s2=s2 and s2:push(data)
-  --print('enddd',i)
-
 end
+
+local function f(data)
+  local n=0
+  for i=1,it do
+    n=(n+i)
+  end
+  s2=s2 and s2:push(data)
+end
+
 
 local s={}
 
@@ -38,15 +63,24 @@ for i=1,n do
 	s1:push(1)
 end
 
-print("initiated",now()-thn)
+print("initiated stage queue test",now()-thn)
 thn=now()
- print("finished",i,finish:get())
+finish:get()
+print("end stage",pool:size(),n,it,now()-thn,os.clock()-thn_clk)
 
-print("end",pool:size(),n,it,now()-thn,os.clock()-thn_clk)
+print("initiated channel queue test",now()-thn)
+thn=lstage.now()
+thn_clk=os.clock()
+for i=0,n do
+  test:push(1)
+end
+finish:get()
+print("end channel",pool:size(),n,it,now()-thn,os.clock()-thn_clk)
+print("initiated serial test",now()-thn)
 thn=lstage.now()
 thn_clk=os.clock()
 for i=0,n do
   f(1)
 end
-print("serial",now()-thn,os.clock()-thn_clk)
+print("end serial",now()-thn,os.clock()-thn_clk)
 
