@@ -87,5 +87,74 @@ if tcp_server_mt then
    end
 end   
 
+local udp_connected_mt,err=lstage.getmetatable("udp{connected}")
+if udp_connected_mt then
+   udp_connected_mt.__wrap=function(sock)
+      local sockfd=sock:getfd()
+      sock:setfd(-1)
+      sock:close()
+      return function()
+         local connected_mt,err=lstage.getmetatable("udp{connected}")
+         if err then
+            return nil,err
+         end
+         local container_sock=socket.udp() --luasock is required
+         container_sock:setfd(sockfd)
+         return lstage.setmetatable(container_sock,connected_mt)     
+      end
+   end
+   
+   if not block then
+     local old_send=udp_connected_mt.__index.send
+     udp_connected_mt.__index.send=function(sock,...)
+       lstage.event.waitfd(sock:getfd(),lstage.event.WRITE)
+        return old_send(sock,...)
+     end
+     
+     local old_receive=udp_connected_mt.__index.receive
+     udp_connected_mt.__index.receive=function(sock,...)
+        lstage.event.waitfd(sock:getfd(),lstage.event.READ)
+        return old_receive(sock,...)
+     end
+   end
+end
+
+local udp_unconnected_mt,err=lstage.getmetatable("udp{unconnected}")
+if udp_unconnected_mt then
+   udp_unconnected_mt.__wrap=function(sock)
+      local sockfd=sock:getfd()
+      sock:setfd(-1) --do not collect on local instance
+      sock:close()
+      return function()
+         local unconnected_mt,err=lstage.getmetatable("udp{unconnected}")
+         if err then
+            return nil,err
+         end
+         local container_sock=socket.udp() --luasock is required
+         container_sock:setfd(sockfd)
+         return lstage.setmetatable(container_sock,unconnected_mt)     
+      end
+   end
+   
+   local old_sendto=udp_unconnected_mt.__index.sendto
+   udp_unconnected_mt.__index.sendto=function(sock,...)
+      lstage.event.waitfd(sock:getfd(),lstage.event.WRITE)
+      return old_sendto(sock,...)
+   end
+   
+   local old_receive=udp_unconnected_mt.__index.receive
+      udp_unconnected_mt.__index.receive=function(sock,...)
+      lstage.event.waitfd(sock:getfd(),lstage.event.READ)
+      return old_receive(sock,...)
+   end
+   
+   local old_receivefrom=udp_unconnected_mt.__index.receivefrom
+   udp_unconnected_mt.__index.receivefrom=function(sock,...)
+      lstage.event.waitfd(sock:getfd(),lstage.event.READ)
+      return old_receivefrom(sock,...)
+   end
+end
+
+
 return socket
 
