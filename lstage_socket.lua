@@ -10,8 +10,6 @@ function mt.__persist()
 	return function () return require'lstage_socket' end
 end
 
-local block=block or false
-
 local tcp_client_mt,err=lstage.getmetatable("tcp{client}")
 if tcp_client_mt then
    tcp_client_mt.__wrap=function(sock)
