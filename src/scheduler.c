@@ -8,7 +8,16 @@
 
 #include <time.h>
 
-//static LFqueue_t ready_queue=NULL;
+/*static char * instance_state[]={
+	"CREATED",
+	"READY",
+	"RUNNING",
+	"WAITING_IO",
+	"TIMEOUT_IO",
+	"WAITING_EVENT",
+	"WAITING_CHANNEL",
+	"I_IDLE"
+};*/
 
 static int thread_tostring (lua_State *L) {
   thread_t * t = luaL_checkudata (L, 1, LSTAGE_THREAD_METATABLE);
@@ -69,7 +78,7 @@ static const struct luaL_Reg StageMetaFunctions[] = {
 		{"__tostring",thread_tostring},
 		{"__eq",thread_eq},
 		{"join",thread_join},
-		{"__ptr",thread_ptr},
+		{"__id",thread_ptr},
 		{"state",thread_state},
 		{"rawkill",thread_rawkill},
 		{NULL,NULL}
@@ -83,84 +92,74 @@ static void get_metatable(lua_State * L) {
   		lua_pushvalue(L,-1);
   		lua_setfield(L,-2,"__index");
 		LUA_REGISTER(L,StageMetaFunctions);
-		luaL_loadstring(L,"local th=(...):ptr() return function() return require'lstage.scheduler'.build(th) end");
+		luaL_loadstring(L,"local th=(...):__id() return function() return require'lstage.scheduler'.build(th) end");
 		lua_setfield (L, -2,"__wrap");
   	}
 }
 
 static void thread_resume_instance(instance_t i) {
 	_DEBUG("Resuming instance: %p %d lua_State (%p)\n",i,i->flags,i->L);
+
 	lua_State * L=i->L;
-	
+	if(i->flags==I_CREATED) {
+		lstage_initinstance(i);
+	}
+	i->args=0;
+	lua_getfield(L,LUA_REGISTRYINDEX,LSTAGE_ERRORFUNCTION_KEY);
+	lua_getfield(L,LUA_REGISTRYINDEX,STAGE_HANDLER_KEY);
+
 	switch(i->flags) {
-		case I_CREATED:
-			lstage_initinstance(i);
-			break;
-		case I_WAITING_IO:
-			i->flags=I_READY;
-			lua_pushliteral(L,STAGE_HANDLER_KEY);
-			lua_gettable(L,LUA_REGISTRYINDEX);
-			lua_pushboolean(L,1);
-			if(lua_pcall(i->L,1,0,0)) {
-		      const char * err=lua_tostring(L,-1);
-		      fprintf(stderr,"Error resuming instance: %s\n",err);
-		   }
-		   break;
-		case I_TIMEOUT_IO:
-			i->flags=I_READY;
-			lua_pushliteral(L,STAGE_HANDLER_KEY);
-			lua_gettable(L,LUA_REGISTRYINDEX);
-			lua_pushboolean(L,0);
-			if(lua_pcall(i->L,1,0,0)) {
-		      const char * err=lua_tostring(L,-1);
-		      fprintf(stderr,"Error resuming instance: %s\n",err);
-		   }
-		   break;
 		case I_READY:
 			if(i->ev) {
-				lua_pushliteral(L,STAGE_HANDLER_KEY);
-				lua_gettable(L,LUA_REGISTRYINDEX);
 		      lua_pushcfunction(L,mar_decode);
 		      lua_pushlstring(L,i->ev->data,i->ev->len);
-		      
 		      lstage_destroyevent(i->ev);
   		      i->ev=NULL;
 				if(lua_pcall(L,1,1,0)) {
-					const char * err=lua_tostring(L,-1);
-			      fprintf(stderr,"Error decoding event: %s\n",err);
-			      break;
+					lua_getfield(L,LUA_REGISTRYINDEX,LSTAGE_ERRORFUNCTION_KEY);
+					lua_insert(L,1);
+					if(lua_pcall(i->L,1,0,0)) {
+				   	const char * err=lua_tostring(L,-1);
+				   	fprintf(stderr,"Error unpacking event: %s\n",err);
+				   }
+				   lstage_destroyinstance(i);
+	  		      return;
 				}
 				int n=
 				#if LUA_VERSION_NUM < 502
-					luaL_getn(L,2);
+					luaL_getn(L,3);
 			   #else
-					luaL_len(L,2);
+					luaL_len(L,3);
 				#endif
 				int j;
-				for(j=1;j<=n;j++) lua_rawgeti(L,2,j);
-				lua_remove(L,2);
+				for(j=1;j<=n;j++) lua_rawgeti(L,3,j);
+				lua_remove(L,3);
 				i->args=n;
-			} else {
-				lua_pushliteral(L,STAGE_HANDLER_KEY);
-				lua_gettable(L,LUA_REGISTRYINDEX);
-				i->args=0;
 			}
-			if(lua_pcall(L,i->args,0,0)) {
-		      const char * err=lua_tostring(L,-1);
-		      fprintf(stderr,"Error resuming instance: %s\n",err);
-		   } 
 			break;
-		case I_WAITING_EVENT:
-			return;
-		case I_WAITING_CHANNEL:
-			return;
-		case I_IDLE:
+		case I_WAITING_IO:
+			lua_pushboolean(L,1);
+			i->args=1;
 			break;
+		case I_TIMEOUT_IO:
+			lua_pushboolean(L,0);
+			i->args=1;
+		   break;
+		default:
+			return;
 	}
-	_DEBUG("Instance Yielded: %p %d lua_State (%p)\n",i,i->flags,i->L);
-	if(i->flags==I_READY || i->flags==I_IDLE) {
-	   lstage_putinstance(i);
-	}
+	
+	if(lua_pcall(L,i->args,0, -(i->args+2))) {
+     	const char * err=lua_tostring(L,-1);
+     	fprintf(stderr,"Error resuming instance (status: ready) %d: %s\n",-(i->args+2),err);
+      lstage_destroyinstance(i);
+      return;
+   }
+  	lua_pop(L,1);
+//  	printf("instance %s\n",instance_state[i->flags]);
+  	if(i->flags==I_READY) { //instance yield
+  		lstage_pushinstance(i);
+  	}
 }
 
 /*thread main loop*/
