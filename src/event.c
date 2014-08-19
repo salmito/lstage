@@ -7,12 +7,20 @@
 #include "marshal.h"
 
 #include <string.h>
-#include <event2/event.h>
-#include <event2/thread.h>
+#include <ev.h>
 #include <unistd.h>
 
 static THREAD_T * event_thread;
-static struct event_base *loop;
+//static struct event_base *loop;
+static struct ev_loop * loop;
+
+struct event_io {
+   union {
+	   ev_io io;
+	   ev_timer timer;
+	};
+   instance_t i;
+};
 
 event_t lstage_newevent(const char * ev, size_t len) {
    event_t e=malloc(sizeof(struct event_s));
@@ -27,13 +35,31 @@ void lstage_destroyevent(event_t e) {
    free(e);
 }
 
-static void dummy_event(evutil_socket_t fd, short events, void *arg) {}
+//static void dummy_event(evutil_socket_t fd, short events, void *arg) {}
+static void dummy_cb (EV_P_ struct ev_timer *w, int revents)  {
+	ev_io_stop (loop, w);
+}
 
-static void io_ready(evutil_socket_t fd, short event, void *arg) {
-	instance_t i=(instance_t)arg;
-	if(event&EV_TIMEOUT) 
-      i->flags=I_TIMEOUT_IO;
+static void io_ready_cb(struct ev_loop *loop, ev_io *w_, int revents)
+{
+	ev_io_stop (loop, w_);
+   struct event_io *arg = (struct event_io *)w_;
+	instance_t i=arg->i;
+//	if(event&EV_TIMEOUT) 
+//      i->flags=I_TIMEOUT_IO;
 	lstage_pushinstance(i);
+	free(w_);
+}
+
+static void timeout_cb (EV_P_ ev_timer *w, int revents) // Timer callback function
+{
+   struct event_io *arg = (struct event_io *)w;
+	instance_t i=arg->i;
+//	if(event&EV_TIMEOUT) 
+//      i->flags=I_TIMEOUT_IO;
+	i->flags=I_TIMEOUT_IO;
+	lstage_pushinstance(i);
+	free(w);
 }
 
 static int event_wait_io(lua_State * L) {
@@ -59,11 +85,11 @@ static int event_wait_io(lua_State * L) {
 	lua_pop(L,1);
 	i->flags=I_WAITING_IO;
    if(time>0.0) {
-      struct timeval to={time,(((double)time-((int)time))*1000000.0L)};
-      event_base_once(loop, fd, m, io_ready, i, &to);
-   } else {
-      event_base_once(loop, fd, m, io_ready, i, NULL);
-   }
+		struct event_io * w=malloc(sizeof(struct event_io));
+		w->i=i;
+		ev_io_init((ev_io *)w, io_ready_cb, fd, m);
+		ev_io_start (loop, (ev_io *)w);
+	}
    return lua_yield(L,0);
 }
 
@@ -81,17 +107,27 @@ static int event_sleep(lua_State *L) {
 	instance_t i=lua_touserdata(L,-1);
 	lua_pop(L,1);
 	i->flags=I_WAITING_IO;
-  	struct timeval to={time,(((double)time-((int)time))*1000000.0L)};
-   event_base_once(loop,-1,EV_TIMEOUT,io_ready,i,&to);
+//  	struct timeval to={time,(((double)time-((int)time))*1000000.0L)};
+//   event_base_once(loop,-1,EV_TIMEOUT,io_ready,i,&to);
+	struct event_io * timeout_watcher=malloc(sizeof(struct event_io));
+	timeout_watcher->i=i;
+ 	ev_timer_init ((ev_timer *)timeout_watcher, timeout_cb, time, 0.);
+   ev_timer_start (loop, (ev_timer *)timeout_watcher);
    return lua_yield(L,0);
 }
 
 static THREAD_RETURN_T THREAD_CALLCONV event_main(void *t_val) {
-	loop = event_base_new();
+/*	loop = event_base_new();
 	if(!loop) return NULL;
    struct event *listener_event = event_new(loop, -1, EV_READ|EV_PERSIST, dummy_event, NULL);
    event_add(listener_event, NULL);
-   event_base_dispatch(loop);
+   event_base_dispatch(loop);*/
+  	loop = ev_default_loop(0);
+	struct ev_io stdin_watcher;
+   ev_init (&stdin_watcher, dummy_cb);
+   ev_io_set (&stdin_watcher, STDIN_FILENO, EV_WRITE);
+   ev_io_start (loop, &stdin_watcher);
+   ev_loop (loop, 0);
 	return NULL;
 }
 
@@ -123,10 +159,8 @@ LSTAGE_EXPORTAPI	int luaopen_lstage_event(lua_State *L) {
 	{NULL,NULL}
 	};
 	if(!event_thread) {
+		loop = EV_DEFAULT;
 		event_thread=malloc(sizeof(THREAD_T));
-#ifndef _WIN32
-		evthread_use_pthreads();
-#endif
 		THREAD_CREATE(event_thread, &event_main, NULL, 0);
 	}
 	lua_newtable(L);

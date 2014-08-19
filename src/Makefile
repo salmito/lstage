@@ -4,7 +4,7 @@ LUA_INCDIR=/usr/include/lua$(LUA_VER)
 
 INCFLAGS=-I$(LUA_INCDIR)
 CFLAGS=-fPIC $(INCFLAGS) -Wall $(EXTRA_FLAGS) -O2
-LIBEV_FLAGS=-levent -levent_pthreads
+LIBEV_FLAGS=-lev # -levent_pthreads
 #EXTRA_FLAGS=-DDEBUG -ggdb
 LIBTBB_FLAGS=-ltbb
 PTHREAD_FLAGS=-lpthread -lrt
